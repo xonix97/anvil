@@ -12,6 +12,7 @@
 #include <windows.h>
 #include <wrl.h>
 #include <shobjidl.h>
+#include <dwmapi.h>
 #include <WebView2.h>
 #include <nlohmann/json.hpp>
 
@@ -25,6 +26,11 @@
 
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "dwmapi.lib")
+
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
 
 using namespace Microsoft::WRL;
 using json = nlohmann::json;
@@ -193,6 +199,18 @@ static void initWebView() {
               g_controller = controller;
               g_controller->get_CoreWebView2(&g_webview);
 
+              // match the app's dark background so nothing flashes white
+              COREWEBVIEW2_COLOR bg{255, 10, 12, 16};
+              ComPtr<ICoreWebView2Controller2> c2;
+              if (SUCCEEDED(g_controller.As(&c2))) c2->put_DefaultBackgroundColor(bg);
+
+              // lock down browser chrome: no devtools, no stray popups
+              ComPtr<ICoreWebView2Settings> settings;
+              if (SUCCEEDED(g_webview->get_Settings(&settings))) {
+                settings->put_AreDevToolsEnabled(FALSE);
+                settings->put_IsStatusBarEnabled(FALSE);
+              }
+
               RECT b; GetClientRect(g_hWnd, &b);
               g_controller->put_Bounds(b);
 
@@ -208,15 +226,26 @@ static void initWebView() {
                     return S_OK;
                   }).Get(), &tok);
 
-              // F5 reloads the UI (handy in dev mode)
+              // keep navigation inside the app (no view-source / popup windows)
+              EventRegistrationToken nw;
+              g_webview->add_NewWindowRequested(
+                Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+                  [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                    args->put_Handled(TRUE);
+                    return S_OK;
+                  }).Get(), &nw);
+
+              // F5 reloads; block Ctrl+U (view-source)
               EventRegistrationToken acc;
               g_controller->add_AcceleratorKeyPressed(
                 Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
                   [](ICoreWebView2Controller*, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
                     COREWEBVIEW2_KEY_EVENT_KIND kind; args->get_KeyEventKind(&kind);
                     UINT key = 0; args->get_VirtualKey(&key);
-                    if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN && key == VK_F5 && g_webview)
-                      g_webview->Reload();
+                    bool down = (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN || kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN);
+                    bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+                    if (down && key == VK_F5 && g_webview) g_webview->Reload();
+                    if (down && ctrl && key == 'U') args->put_Handled(TRUE);
                     return S_OK;
                   }).Get(), &acc);
 
@@ -236,11 +265,16 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nCmd) {
   wc.hInstance = hInst;
   wc.lpszClassName = "AnvilWindow";
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-  wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+  wc.hbrBackground = CreateSolidBrush(RGB(10, 12, 16));  // dark, not white
   RegisterClassA(&wc);
 
   g_hWnd = CreateWindowExA(0, "AnvilWindow", "Anvil", WS_OVERLAPPEDWINDOW,
       CW_USEDEFAULT, CW_USEDEFAULT, 1200, 760, nullptr, nullptr, hInst, nullptr);
+
+  // dark title bar to match the app
+  BOOL dark = TRUE;
+  DwmSetWindowAttribute(g_hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+
   ShowWindow(g_hWnd, nCmd);
   UpdateWindow(g_hWnd);
 
