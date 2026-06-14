@@ -1,6 +1,6 @@
 # Anvil ⚒️
 
-A **BYOK agentic coding assistant** for your terminal — like Codex / Claude Code, written in C++. Plug in your own API key, give it a task, and it reads files, writes code, and runs commands through an agent loop. Defaults to any **OpenAI-compatible** API; **Anthropic (Claude)** supported via config.
+A **native Windows desktop app** that's a BYOK agentic AI coding assistant — file explorer, code editor, and an AI agent that reads/writes your files and runs commands. Built in **C++ (Win32 + WebView2)**: native window and tooling in C++, UI in HTML/JS rendered by Microsoft's WebView2. No Electron. Defaults to any **OpenAI-compatible** API; **Anthropic (Claude)** supported in Settings.
 
 > © 2026 Abhyudaya Mishra. All rights reserved. Proprietary — see [LICENSE](./LICENSE).
 
@@ -10,62 +10,37 @@ A **BYOK agentic coding assistant** for your terminal — like Codex / Claude Co
 
 ## Download
 
-Grab the latest Windows build from **[Releases → latest](../../releases/latest)** (`anvil.exe`). It's compiled by GitHub Actions on a Windows runner — see [`.github/workflows/build.yml`](.github/workflows/build.yml).
+Grab the latest Windows build from **[Releases → latest](../../releases/latest)** (`anvil.exe`), compiled by GitHub Actions on a Windows runner. You'll need the [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) (preinstalled on Windows 11 and most Windows 10).
 
 ## What it does
 
-- **Agent loop** — sends your task to the model, runs the tools it asks for, feeds results back, repeats until done.
-- **Tools:** `read_file`, `write_file`, `list_dir`, `run_command`.
-- **Safe by default** — writing files and running commands ask for `[y/N]` confirmation first.
-- **Colored terminal UI** with a clean prompt.
-- **No external HTTP deps** — uses Windows' built-in WinHTTP. JSON via nlohmann/json.
+- **File explorer + editor** — open a folder, browse files, edit and save.
+- **AI agent panel** — give it a task; it inspects the project and makes changes through an agent loop.
+- **Tools:** `read_file`, `write_file`, `list_dir`, `run_command` — file writes and commands ask for confirmation first.
+- **BYOK** — your key, stored locally in `%APPDATA%\anvil\config.json`. OpenAI-compatible by default; switch to Claude in Settings.
+- **Native** — a real Win32 `.exe`, not a bundled browser. UI via WebView2; FS and process work in C++.
 
-## Configure (Bring Your Own Key)
+## Architecture
 
-Set environment variables:
-
-```bat
-set ANVIL_API_KEY=sk-your-key
-set ANVIL_MODEL=gpt-4o-mini
-:: optional
-set ANVIL_PROVIDER=openai            & rem  openai (default) | anthropic
-set ANVIL_BASE_URL=https://api.openai.com
 ```
-
-…or drop a config file at `%USERPROFILE%\.anvil\config.json`:
-
-```json
-{
-  "provider": "openai",
-  "apiKey": "sk-your-key",
-  "model": "gpt-4o-mini",
-  "baseUrl": "https://api.openai.com"
-}
+┌─────────────── Anvil.exe (C++ / Win32) ───────────────┐
+│  WebView2 control ── renders the HTML/JS UI           │
+│        ▲  window.chrome.webview message bridge  ▼     │
+│  C++ host: open folder · read/write files · run cmd   │
+└───────────────────────────────────────────────────────┘
+        UI's JS agent loop calls your LLM (BYOK) via fetch
 ```
-
-For Claude:
-```json
-{ "provider": "anthropic", "apiKey": "sk-ant-...", "model": "claude-3-5-sonnet-latest" }
-```
-
-It also falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` if `ANVIL_API_KEY` isn't set.
-
-## Use
-
-```text
-anvil› refactor utils.cpp to remove the duplicated parsing code
-```
-
-Anvil will inspect the project, propose edits, and ask before writing or running anything.
 
 ## Build it yourself
 
-```bash
+Needs Windows, MSVC, CMake ≥ 3.19. The build fetches the WebView2 SDK and nlohmann/json automatically.
+
+```bat
 cmake -B build
 cmake --build build --config Release
 ```
 
-Needs CMake ≥ 3.16 and a C++17 compiler. On Windows it links WinHTTP automatically.
+Output: `build\Release\anvil.exe`.
 
 ## License
 Proprietary — All Rights Reserved. See [LICENSE](./LICENSE).
