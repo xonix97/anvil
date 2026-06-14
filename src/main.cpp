@@ -3,6 +3,12 @@
 // HTML/JS rendered in WebView2. Tools are exposed to JS via window.chrome.webview.
 // (c) 2026 Abhyudaya Mishra. All rights reserved. Proprietary — see LICENSE.
 
+// --- Dev toggle ---------------------------------------------------------
+//  ANVIL_DEV 1  -> load UI from ./ui/index.html (edit + press F5, no rebuild)
+//  ANVIL_DEV 0  -> use the embedded UI in ui_html.h (single-file release)
+#define ANVIL_DEV 1
+// -----------------------------------------------------------------------
+
 #include <windows.h>
 #include <wrl.h>
 #include <shobjidl.h>
@@ -41,6 +47,23 @@ static std::string narrow(const std::wstring& w) {
   std::string s(n, 0);
   WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
   return s;
+}
+
+// Find the ui/ folder by walking up from the exe location (dev mode).
+static std::wstring uiFolder() {
+  wchar_t buf[MAX_PATH];
+  GetModuleFileNameW(nullptr, buf, MAX_PATH);
+  std::wstring dir(buf);
+  auto slash = dir.find_last_of(L"\\/");
+  if (slash != std::wstring::npos) dir = dir.substr(0, slash);
+  for (int i = 0; i < 6; ++i) {
+    std::wstring cand = dir + L"\\ui";
+    if (GetFileAttributesW((cand + L"\\index.html").c_str()) != INVALID_FILE_ATTRIBUTES) return cand;
+    auto s = dir.find_last_of(L"\\/");
+    if (s == std::wstring::npos) break;
+    dir = dir.substr(0, s);
+  }
+  return dir + L"\\ui";
 }
 
 // ---------- config storage (%APPDATA%\anvil\config.json) ----------
@@ -146,6 +169,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 // ---------- webview boot ----------
+static void loadUI() {
+#if ANVIL_DEV
+  ComPtr<ICoreWebView2_3> wv3;
+  if (SUCCEEDED(g_webview.As(&wv3))) {
+    wv3->SetVirtualHostNameToFolderMapping(L"anvil.local", uiFolder().c_str(),
+        COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
+    g_webview->Navigate(L"https://anvil.local/index.html");
+    return;
+  }
+#endif
+  g_webview->NavigateToString(widen(kAppHtml).c_str());
+}
+
 static void initWebView() {
   CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr,
     Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
@@ -172,7 +208,19 @@ static void initWebView() {
                     return S_OK;
                   }).Get(), &tok);
 
-              g_webview->NavigateToString(widen(kAppHtml).c_str());
+              // F5 reloads the UI (handy in dev mode)
+              EventRegistrationToken acc;
+              g_controller->add_AcceleratorKeyPressed(
+                Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
+                  [](ICoreWebView2Controller*, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
+                    COREWEBVIEW2_KEY_EVENT_KIND kind; args->get_KeyEventKind(&kind);
+                    UINT key = 0; args->get_VirtualKey(&key);
+                    if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN && key == VK_F5 && g_webview)
+                      g_webview->Reload();
+                    return S_OK;
+                  }).Get(), &acc);
+
+              loadUI();
               return S_OK;
             }).Get());
         return S_OK;
