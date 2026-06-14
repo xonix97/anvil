@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>anvil</title>
+<style>
+  :root{
+    --bg:#0a0c10;--panel:#0d1016;--line:#1b2027;--line2:#272d36;
+    --text:#cdd3de;--dim:#6b7280;--bright:#f0f3f8;
+    --accent:#e0913c;--cyan:#56b6c2;--green:#98c379;--red:#e06c75;--violet:#c678dd;
+    --mono:'JetBrains Mono','Cascadia Code','Consolas',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;}
+  body{font-family:var(--mono);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;display:flex;flex-direction:column;overflow:hidden;}
+
+  .bar{height:30px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 12px;font-size:12px;}
+  .bar .brand{color:var(--accent);font-weight:700;}
+  .bar .brand b{color:var(--bright);}
+  .bar .sp{flex:1;}
+  .bar button{background:transparent;border:1px solid var(--line2);color:var(--dim);padding:3px 9px;font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:2px;}
+  .bar button:hover{color:var(--text);border-color:var(--accent);}
+
+  .main{flex:1;display:flex;min-height:0;}
+  .col{display:flex;flex-direction:column;min-height:0;}
+  .col-head{padding:6px 10px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--line);letter-spacing:.5px;text-transform:lowercase;}
+  .col-head::before{content:"── ";color:var(--line2);}
+
+  .files{width:208px;background:var(--panel);border-right:1px solid var(--line);}
+  .tree{flex:1;overflow:auto;padding:4px 0;}
+  .tree .f{padding:2px 12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);}
+  .tree .f:hover{background:#11151b;}
+  .tree .f.dir{color:var(--cyan);}
+  .tree .f::before{content:"  ";}
+  .tree .f.dir::before{content:"› ";color:var(--cyan);}
+
+  .editor-col{flex:1;min-width:0;background:#090b0e;}
+  .ed-head{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);font-size:12px;color:var(--dim);}
+  .ed-head .path{color:var(--text);}
+  .ed-head .save{margin-left:auto;background:transparent;border:1px solid var(--accent);color:var(--accent);padding:2px 10px;font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:2px;}
+  .ed-head .save:hover{background:var(--accent);color:#0a0c10;}
+  textarea#editor{flex:1;width:100%;resize:none;border:none;outline:none;background:#090b0e;color:#d7dce4;font-family:var(--mono);font-size:13px;line-height:1.55;padding:12px 14px;tab-size:2;}
+
+  .chat{width:430px;background:var(--bg);border-left:1px solid var(--line);}
+  .msgs{flex:1;overflow:auto;padding:10px 12px;}
+  .msg{white-space:pre-wrap;word-break:break-word;margin:2px 0;}
+  .msg.user{color:var(--bright);}
+  .msg.user::before{content:"› ";color:var(--accent);font-weight:700;}
+  .msg.ai{color:var(--text);}
+  .msg.ai::before{content:"⏺ ";color:var(--green);}
+  .msg.tool{color:var(--dim);}
+  .msg.tool::before{content:"│ ";color:var(--line2);}
+  .composer{border-top:1px solid var(--line);display:flex;align-items:flex-start;padding:8px 12px;gap:8px;}
+  .composer .ps{color:var(--accent);padding-top:7px;font-weight:700;}
+  .composer textarea{flex:1;resize:none;height:42px;background:transparent;border:none;color:var(--bright);font-family:var(--mono);font-size:13px;outline:none;padding-top:6px;}
+  .composer textarea::placeholder{color:var(--dim);}
+
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;place-items:center;}
+  .modal.open{display:grid;}
+  .card{background:var(--panel);border:1px solid var(--line2);border-radius:3px;padding:18px;width:380px;}
+  .card h3{font-size:13px;margin-bottom:14px;color:var(--accent);}
+  .card h3::before{content:"# ";color:var(--dim);}
+  .card label{display:block;font-size:11px;color:var(--dim);margin:10px 0 4px;}
+  .card input,.card select{width:100%;background:#090b0e;border:1px solid var(--line2);border-radius:2px;color:var(--text);padding:7px;font-size:12px;font-family:var(--mono);outline:none;}
+  .card input:focus,.card select:focus{border-color:var(--accent);}
+  .card .row{display:flex;gap:8px;margin-top:16px;}
+  .card .row button{flex:1;border:1px solid var(--line2);background:transparent;color:var(--text);border-radius:2px;padding:8px;font-family:var(--mono);font-size:12px;cursor:pointer;}
+  .card .row .save{border-color:var(--accent);color:var(--accent);}
+  .card .row .save:hover{background:var(--accent);color:#0a0c10;}
+  .empty{color:var(--dim);padding:10px;font-size:12px;}
+  ::-webkit-scrollbar{width:9px;height:9px;}
+  ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:0;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</head>
+<body>
+  <div class="bar">
+    <span class="brand">⚒ <b>anvil</b></span>
+    <span class="sp"></span>
+    <button onclick="openFolder()">open folder</button>
+    <button onclick="openSettings()">settings</button>
+  </div>
+
+  <div class="main">
+    <div class="col files">
+      <div class="col-head">explorer</div>
+      <div class="tree" id="tree"><div class="empty">open a folder to start.</div></div>
+    </div>
+
+    <div class="col editor-col">
+      <div class="ed-head"><span class="path" id="openPath">no file open</span><button class="save" onclick="saveFile()">save</button></div>
+      <textarea id="editor" spellcheck="false" placeholder="// open a file from the explorer"></textarea>
+    </div>
+
+    <div class="col chat">
+      <div class="col-head">agent</div>
+      <div class="msgs" id="msgs"><div class="empty">set your api key in settings, then type a task below.</div></div>
+      <div class="composer">
+        <span class="ps">›</span>
+        <textarea id="prompt" placeholder="ask anvil…  (ctrl+enter)"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="settings">
+    <div class="card">
+      <h3>settings — bring your own key</h3>
+      <label>provider</label>
+      <select id="cfgProvider"><option value="openai">openai-compatible</option><option value="anthropic">anthropic (claude)</option></select>
+      <label>api key</label>
+      <input id="cfgKey" type="password" placeholder="sk-..." />
+      <label>model</label>
+      <input id="cfgModel" placeholder="gpt-4o-mini" />
+      <label>base url (optional)</label>
+      <input id="cfgBase" placeholder="https://api.openai.com" />
+      <div class="row"><button onclick="closeSettings()">cancel</button><button class="save" onclick="saveSettings()">save</button></div>
+    </div>
+  </div>
+
+<script>
+  // ---- native bridge (request/response over webview messaging) ----
+  const pending = {};
+  let reqId = 0;
+  function native(type, payload){
+    return new Promise((resolve)=>{
+      const id = ++reqId;
+      pending[id] = resolve;
+      window.chrome.webview.postMessage(JSON.stringify({id, type, ...payload}));
+    });
+  }
+  window.chrome.webview.addEventListener('message', (e)=>{
+    let m; try{ m = JSON.parse(e.data); }catch{ return; }
+    if(m.id && pending[m.id]){ pending[m.id](m); delete pending[m.id]; }
+  });
+
+  // ---- config ----
+  let cfg = {};
+  (async()=>{ const r = await native('loadConfig', {}); cfg = (r && r.cfg) || {}; })();
+  function openSettings(){
+    cfgProvider.value=cfg.provider||'openai'; cfgKey.value=cfg.apiKey||'';
+    cfgModel.value=cfg.model||''; cfgBase.value=cfg.baseUrl||'';
+    settings.classList.add('open');
+  }
+  function closeSettings(){ settings.classList.remove('open'); }
+  function saveSettings(){
+    cfg.provider=cfgProvider.value; cfg.apiKey=cfgKey.value;
+    cfg.model=cfgModel.value || (cfg.provider==='anthropic'?'claude-3-5-sonnet-latest':'gpt-4o-mini');
+    cfg.baseUrl=cfgBase.value || (cfg.provider==='anthropic'?'https://api.anthropic.com':'https://api.openai.com');
+    native('saveConfig', {cfg});
+    closeSettings();
+  }
+
+  // ---- file tree / editor ----
+  let rootDir = '';
+  let openFilePath = '';
+  async function openFolder(){
+    const r = await native('openFolder', {});
+    if(!r.path) return;
+    rootDir = r.path;
+    await refreshTree();
+  }
+  async function refreshTree(){
+    const r = await native('list', {path: rootDir});
+    const tree = document.getElementById('tree');
+    if(!r.entries || !r.entries.length){ tree.innerHTML='<div class="empty">(empty folder)</div>'; return; }
+    tree.innerHTML = r.entries.map(en=>
+      `<div class="f ${en.dir?'dir':''}" onclick="${en.dir?'':`openFile('${en.path.replace(/\\/g,'\\\\')}')`}">${en.name}</div>`
+    ).join('');
+  }
+  async function openFile(path){
+    const r = await native('read', {path});
+    if(r.error){ alert(r.error); return; }
+    openFilePath = path; document.getElementById('openPath').textContent = path;
+    document.getElementById('editor').value = r.content||'';
+  }
+  async function saveFile(){
+    if(!openFilePath) return;
+    await native('write', {path: openFilePath, content: document.getElementById('editor').value});
+    addMsg('tool', 'saved '+openFilePath);
+  }
+
+  // ---- chat / agent ----
+  function addMsg(kind, text){
+    const box = document.getElementById('msgs');
+    if(box.querySelector('.empty')) box.innerHTML='';
+    const d = document.createElement('div'); d.className='msg '+kind; d.textContent=text; box.appendChild(d);
+    box.scrollTop = box.scrollHeight; return d;
+  }
+
+  const tools = {
+    async read_file(a){ const r=await native('read',{path:a.path}); return r.error||r.content; },
+    async write_file(a){ if(!confirm('Write to '+a.path+'?')) return 'declined'; await native('write',{path:a.path,content:a.content}); if(a.path===openFilePath) document.getElementById('editor').value=a.content; return 'written'; },
+    async list_dir(a){ const r=await native('list',{path:a.path||rootDir}); return (r.entries||[]).map(e=>(e.dir?'[dir] ':'      ')+e.name).join('\n'); },
+    async run_command(a){ if(!confirm('Run: '+a.command)) return 'declined'; const r=await native('run',{command:a.command,cwd:rootDir}); return r.output||'(no output)'; },
+  };
+
+  const SYS = "You are Anvil, a precise AI coding assistant inside a native desktop app. Use the tools to read/write files, list directories and run commands. Inspect before editing, make minimal correct changes, and give a short final summary.";
+  const openaiToolDefs = [
+    {type:'function',function:{name:'read_file',description:'Read a text file.',parameters:{type:'object',properties:{path:{type:'string'}},required:['path']}}},
+    {type:'function',function:{name:'write_file',description:'Create/overwrite a file (asks user).',parameters:{type:'object',properties:{path:{type:'string'},content:{type:'string'}},required:['path','content']}}},
+    {type:'function',function:{name:'list_dir',description:'List a directory.',parameters:{type:'object',properties:{path:{type:'string'}}}}},
+    {type:'function',function:{name:'run_command',description:'Run a shell command (asks user).',parameters:{type:'object',properties:{command:{type:'string'}},required:['command']}}},
+  ];
+
+  let messages = [{role:'system',content:SYS}];
+  async function send(){
+    if(!cfg.apiKey){ openSettings(); return; }
+    const ta = document.getElementById('prompt'); const text = ta.value.trim(); if(!text) return;
+    ta.value=''; addMsg('user', text); messages.push({role:'user',content:text});
+    if(cfg.provider==='anthropic') await loopAnthropic(); else await loopOpenAI();
+  }
+  document.getElementById('prompt').addEventListener('keydown',e=>{ if(e.ctrlKey&&e.key==='Enter') send(); });
+
+  async function loopOpenAI(){
+    for(let i=0;i<25;i++){
+      const res = await fetch(cfg.baseUrl+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.apiKey},body:JSON.stringify({model:cfg.model,messages,tools:openaiToolDefs,tool_choice:'auto'})});
+      if(!res.ok){ addMsg('ai','API error '+res.status+': '+(await res.text()).slice(0,300)); return; }
+      const j = await res.json(); const m = j.choices[0].message; messages.push(m);
+      if(m.tool_calls && m.tool_calls.length){
+        for(const c of m.tool_calls){
+          let args={}; try{args=JSON.parse(c.function.arguments);}catch{}
+          addMsg('tool','→ '+c.function.name+' '+JSON.stringify(args));
+          const result = await (tools[c.function.name]?.(args) ?? Promise.resolve('unknown tool'));
+          messages.push({role:'tool',tool_call_id:c.id,content:String(result)});
+        }
+        continue;
+      }
+      if(m.content) addMsg('ai', m.content);
+      return;
+    }
+  }
+
+  async function loopAnthropic(){
+    const aDefs = openaiToolDefs.map(t=>({name:t.function.name,description:t.function.description,input_schema:t.function.parameters}));
+    const amsgs = messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='tool'?'user':m.role,content:m.content}));
+    for(let i=0;i<25;i++){
+      const res = await fetch(cfg.baseUrl+'/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':cfg.apiKey,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:cfg.model,max_tokens:4096,system:SYS,messages:amsgs,tools:aDefs})});
+      if(!res.ok){ addMsg('ai','API error '+res.status+': '+(await res.text()).slice(0,300)); return; }
+      const j = await res.json(); amsgs.push({role:'assistant',content:j.content});
+      const toolResults=[]; let finalText='';
+      for(const b of j.content){
+        if(b.type==='text') finalText+=b.text;
+        else if(b.type==='tool_use'){ addMsg('tool','→ '+b.name+' '+JSON.stringify(b.input)); const r=await (tools[b.name]?.(b.input)??'unknown'); toolResults.push({type:'tool_result',tool_use_id:b.id,content:String(r)}); }
+      }
+      if(toolResults.length){ amsgs.push({role:'user',content:toolResults}); continue; }
+      if(finalText) addMsg('ai', finalText);
+      return;
+    }
+  }
+</script>
+</body>
+</html>
