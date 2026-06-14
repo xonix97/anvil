@@ -1,6 +1,6 @@
 // Embedded UI for Anvil (served to WebView2 via NavigateToString).
-// Flat design, no gradients. Agent loop runs in JS; native FS/command tools
-// are exposed by the C++ host through window.chrome.webview messaging.
+// Terminal / TUI aesthetic (opencode-style). No gradients. Agent loop runs in JS;
+// native FS/command tools are exposed by the C++ host via window.chrome.webview.
 #pragma once
 
 static const char* kAppHtml = R"HTMLDOC(
@@ -9,94 +9,118 @@ static const char* kAppHtml = R"HTMLDOC(
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Anvil</title>
+<title>anvil</title>
 <style>
-  :root{--bg:#0f1115;--panel:#171a21;--panel2:#1e222b;--line:#2a2f3a;--text:#f2f4f8;--muted:#8b93a4;--accent:#ff6b35;--ok:#2dd4a7;--mono:'Cascadia Code',Consolas,monospace;}
+  :root{
+    --bg:#0a0c10;--panel:#0d1016;--line:#1b2027;--line2:#272d36;
+    --text:#cdd3de;--dim:#6b7280;--bright:#f0f3f8;
+    --accent:#e0913c;--cyan:#56b6c2;--green:#98c379;--red:#e06c75;--violet:#c678dd;
+    --mono:'JetBrains Mono','Cascadia Code','Consolas',monospace;
+  }
   *{margin:0;padding:0;box-sizing:border-box;}
   html,body{height:100%;}
-  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;overflow:hidden;}
-  .titlebar{height:38px;background:var(--panel);border-bottom:2px solid var(--line);display:flex;align-items:center;padding:0 12px;gap:10px;-webkit-app-region:drag;}
-  .titlebar .logo{width:20px;height:20px;border-radius:5px;background:var(--accent);display:grid;place-items:center;font-size:12px;}
-  .titlebar b{font-size:14px;letter-spacing:.5px;}
-  .titlebar .sp{flex:1;}
-  .titlebar button{-webkit-app-region:no-drag;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;}
-  .titlebar button:hover{border-color:var(--accent);}
+  body{font-family:var(--mono);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;display:flex;flex-direction:column;overflow:hidden;}
+
+  .bar{height:30px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 12px;font-size:12px;}
+  .bar .brand{color:var(--accent);font-weight:700;}
+  .bar .brand b{color:var(--bright);}
+  .bar .sp{flex:1;}
+  .bar button{background:transparent;border:1px solid var(--line2);color:var(--dim);padding:3px 9px;font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:2px;}
+  .bar button:hover{color:var(--text);border-color:var(--accent);}
+
   .main{flex:1;display:flex;min-height:0;}
-  .sidebar{width:230px;background:var(--panel);border-right:2px solid var(--line);display:flex;flex-direction:column;}
-  .side-head{padding:10px 12px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:flex;justify-content:space-between;align-items:center;}
+  .col{display:flex;flex-direction:column;min-height:0;}
+  .col-head{padding:6px 10px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--line);letter-spacing:.5px;text-transform:lowercase;}
+  .col-head::before{content:"── ";color:var(--line2);}
+
+  .files{width:208px;background:var(--panel);border-right:1px solid var(--line);}
   .tree{flex:1;overflow:auto;padding:4px 0;}
-  .tree .f{padding:5px 14px;font-size:13px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#cdd2dd;}
-  .tree .f:hover{background:var(--panel2);}
-  .tree .f.dir{color:var(--muted);}
-  .editor-wrap{flex:1;display:flex;flex-direction:column;min-width:0;}
-  .tabbar{height:34px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 12px;gap:10px;font-size:13px;color:var(--muted);}
-  .tabbar .save{margin-left:auto;background:var(--accent);color:#1a0e06;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;}
-  textarea#editor{flex:1;width:100%;resize:none;border:none;outline:none;background:#0c0e12;color:#e6e8f0;font-family:var(--mono);font-size:13px;line-height:1.5;padding:14px;tab-size:2;}
-  .chat{width:380px;background:var(--panel);border-left:2px solid var(--line);display:flex;flex-direction:column;}
-  .chat-head{padding:10px 12px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--line);}
-  .msgs{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;}
-  .msg{font-size:13px;line-height:1.55;border-radius:8px;padding:9px 11px;max-width:100%;white-space:pre-wrap;word-break:break-word;}
-  .msg.user{background:var(--panel2);align-self:flex-end;}
-  .msg.ai{background:#12161d;border:1px solid var(--line);}
-  .msg.tool{background:none;border-left:3px solid var(--accent);padding:4px 10px;color:var(--muted);font-family:var(--mono);font-size:12px;}
-  .composer{border-top:1px solid var(--line);padding:10px;display:flex;gap:8px;}
-  .composer textarea{flex:1;resize:none;height:46px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:9px;font-size:13px;font-family:inherit;outline:none;}
-  .composer textarea:focus{border-color:var(--accent);}
-  .composer button{background:var(--accent);color:#1a0e06;border:none;border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer;}
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;place-items:center;}
+  .tree .f{padding:2px 12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);}
+  .tree .f:hover{background:#11151b;}
+  .tree .f.dir{color:var(--cyan);}
+  .tree .f::before{content:"  ";}
+  .tree .f.dir::before{content:"› ";color:var(--cyan);}
+
+  .editor-col{flex:1;min-width:0;background:#090b0e;}
+  .ed-head{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);font-size:12px;color:var(--dim);}
+  .ed-head .path{color:var(--text);}
+  .ed-head .save{margin-left:auto;background:transparent;border:1px solid var(--accent);color:var(--accent);padding:2px 10px;font-family:var(--mono);font-size:11px;cursor:pointer;border-radius:2px;}
+  .ed-head .save:hover{background:var(--accent);color:#0a0c10;}
+  textarea#editor{flex:1;width:100%;resize:none;border:none;outline:none;background:#090b0e;color:#d7dce4;font-family:var(--mono);font-size:13px;line-height:1.55;padding:12px 14px;tab-size:2;}
+
+  .chat{width:430px;background:var(--bg);border-left:1px solid var(--line);}
+  .msgs{flex:1;overflow:auto;padding:10px 12px;}
+  .msg{white-space:pre-wrap;word-break:break-word;margin:2px 0;}
+  .msg.user{color:var(--bright);}
+  .msg.user::before{content:"› ";color:var(--accent);font-weight:700;}
+  .msg.ai{color:var(--text);}
+  .msg.ai::before{content:"⏺ ";color:var(--green);}
+  .msg.tool{color:var(--dim);}
+  .msg.tool::before{content:"│ ";color:var(--line2);}
+  .composer{border-top:1px solid var(--line);display:flex;align-items:flex-start;padding:8px 12px;gap:8px;}
+  .composer .ps{color:var(--accent);padding-top:7px;font-weight:700;}
+  .composer textarea{flex:1;resize:none;height:42px;background:transparent;border:none;color:var(--bright);font-family:var(--mono);font-size:13px;outline:none;padding-top:6px;}
+  .composer textarea::placeholder{color:var(--dim);}
+
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;place-items:center;}
   .modal.open{display:grid;}
-  .card{background:var(--panel);border:2px solid var(--line);border-radius:12px;padding:22px;width:360px;}
-  .card h3{font-size:16px;margin-bottom:14px;}
-  .card label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;}
-  .card input,.card select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--text);padding:9px;font-size:13px;outline:none;}
-  .card .row{display:flex;gap:10px;margin-top:18px;}
-  .card .row button{flex:1;border:none;border-radius:8px;padding:10px;font-weight:600;cursor:pointer;}
-  .card .save{background:var(--accent);color:#1a0e06;}
-  .card .cancel{background:var(--panel2);color:var(--text);border:1px solid var(--line);}
-  .empty{color:var(--muted);font-size:13px;padding:14px;text-align:center;}
+  .card{background:var(--panel);border:1px solid var(--line2);border-radius:3px;padding:18px;width:380px;}
+  .card h3{font-size:13px;margin-bottom:14px;color:var(--accent);}
+  .card h3::before{content:"# ";color:var(--dim);}
+  .card label{display:block;font-size:11px;color:var(--dim);margin:10px 0 4px;}
+  .card input,.card select{width:100%;background:#090b0e;border:1px solid var(--line2);border-radius:2px;color:var(--text);padding:7px;font-size:12px;font-family:var(--mono);outline:none;}
+  .card input:focus,.card select:focus{border-color:var(--accent);}
+  .card .row{display:flex;gap:8px;margin-top:16px;}
+  .card .row button{flex:1;border:1px solid var(--line2);background:transparent;color:var(--text);border-radius:2px;padding:8px;font-family:var(--mono);font-size:12px;cursor:pointer;}
+  .card .row .save{border-color:var(--accent);color:var(--accent);}
+  .card .row .save:hover{background:var(--accent);color:#0a0c10;}
+  .empty{color:var(--dim);padding:10px;font-size:12px;}
+  ::-webkit-scrollbar{width:9px;height:9px;}
+  ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:0;}
+  ::-webkit-scrollbar-track{background:transparent;}
 </style>
 </head>
 <body>
-  <div class="titlebar">
-    <span class="logo">⚒</span><b>Anvil</b>
+  <div class="bar">
+    <span class="brand">⚒ <b>anvil</b></span>
     <span class="sp"></span>
-    <button onclick="openFolder()">Open Folder</button>
-    <button onclick="openSettings()">⚙ Settings</button>
+    <button onclick="openFolder()">open folder</button>
+    <button onclick="openSettings()">settings</button>
   </div>
 
   <div class="main">
-    <div class="sidebar">
-      <div class="side-head">Explorer</div>
-      <div class="tree" id="tree"><div class="empty">Open a folder to start.</div></div>
+    <div class="col files">
+      <div class="col-head">explorer</div>
+      <div class="tree" id="tree"><div class="empty">open a folder to start.</div></div>
     </div>
 
-    <div class="editor-wrap">
-      <div class="tabbar"><span id="openPath">No file open</span><button class="save" onclick="saveFile()">Save</button></div>
-      <textarea id="editor" spellcheck="false" placeholder="Open a file from the explorer…"></textarea>
+    <div class="col editor-col">
+      <div class="ed-head"><span class="path" id="openPath">no file open</span><button class="save" onclick="saveFile()">save</button></div>
+      <textarea id="editor" spellcheck="false" placeholder="// open a file from the explorer"></textarea>
     </div>
 
-    <div class="chat">
-      <div class="chat-head">AI Agent</div>
-      <div class="msgs" id="msgs"><div class="empty">Set your API key in Settings, then ask me to build or change something.</div></div>
+    <div class="col chat">
+      <div class="col-head">agent</div>
+      <div class="msgs" id="msgs"><div class="empty">set your api key in settings, then type a task below.</div></div>
       <div class="composer">
-        <textarea id="prompt" placeholder="Ask Anvil… (Ctrl+Enter to send)"></textarea>
-        <button onclick="send()">Send</button>
+        <span class="ps">›</span>
+        <textarea id="prompt" placeholder="ask anvil…  (ctrl+enter)"></textarea>
       </div>
     </div>
   </div>
 
   <div class="modal" id="settings">
     <div class="card">
-      <h3>Settings — Bring Your Own Key</h3>
-      <label>Provider</label>
-      <select id="cfgProvider"><option value="openai">OpenAI-compatible</option><option value="anthropic">Anthropic (Claude)</option></select>
-      <label>API Key</label>
+      <h3>settings — bring your own key</h3>
+      <label>provider</label>
+      <select id="cfgProvider"><option value="openai">openai-compatible</option><option value="anthropic">anthropic (claude)</option></select>
+      <label>api key</label>
       <input id="cfgKey" type="password" placeholder="sk-..." />
-      <label>Model</label>
+      <label>model</label>
       <input id="cfgModel" placeholder="gpt-4o-mini" />
-      <label>Base URL (optional)</label>
+      <label>base url (optional)</label>
       <input id="cfgBase" placeholder="https://api.openai.com" />
-      <div class="row"><button class="cancel" onclick="closeSettings()">Cancel</button><button class="save" onclick="saveSettings()">Save</button></div>
+      <div class="row"><button onclick="closeSettings()">cancel</button><button class="save" onclick="saveSettings()">save</button></div>
     </div>
   </div>
 
@@ -147,7 +171,7 @@ static const char* kAppHtml = R"HTMLDOC(
     const tree = document.getElementById('tree');
     if(!r.entries || !r.entries.length){ tree.innerHTML='<div class="empty">(empty folder)</div>'; return; }
     tree.innerHTML = r.entries.map(en=>
-      `<div class="f ${en.dir?'dir':''}" onclick="${en.dir?'':`openFile('${en.path.replace(/\\/g,'\\\\')}')`}">${en.dir?'▸ ':''}${en.name}</div>`
+      `<div class="f ${en.dir?'dir':''}" onclick="${en.dir?'':`openFile('${en.path.replace(/\\/g,'\\\\')}')`}">${en.name}</div>`
     ).join('');
   }
   async function openFile(path){
